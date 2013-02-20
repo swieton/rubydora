@@ -223,7 +223,15 @@ module Rubydora
         end
       end
 
-      self.datastreams.select { |dsid, ds| ds.changed? }.each { |dsid, ds| ds.save }
+      if self.repository.version >= 4.0
+        managed_ds, external_ds = self.datastreams.select { |dsid, ds| ds.changed? }.partition { |dsid, ds| ['M', 'X'].include? ds.controlGroup }
+
+        repository.add_multipart_datastreams :pid => self.pid, :datastreams => Hash[*managed_ds.map { |(dsid, ds)| [ds.dsid, ds.content] }.flatten(1)]
+
+        external_ds.each { |dsid, ds| ds.save }
+      else
+        self.datastreams.select { |dsid, ds| ds.changed? }.each { |dsid, ds| ds.save }
+      end
       self
     end
 

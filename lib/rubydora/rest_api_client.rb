@@ -271,6 +271,22 @@ module Rubydora
         rescue_with_handler(exception) || raise
     end
 
+    def add_multipart_datastreams options = {}
+
+      pid = options.delete(:pid)
+
+      multipart_request = { :multipart => true }
+
+      options[:datastreams].each do |dsid, file|
+        run_hook :before_add_datastream, :pid => pid, :dsid => dsid, :file => file, :options => options
+        str = file.respond_to?(:read) ? file.read : file
+        multipart_request[dsid] = file
+        file.rewind if file.respond_to?(:rewind)
+      end
+
+      client[datastream_url(pid)].post(multipart_request)
+    end
+
     # {include:RestApiClient::API_DOCUMENTATION}
     # @param [Hash] options
     # @option options [String] :pid
