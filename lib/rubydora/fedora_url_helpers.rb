@@ -101,14 +101,22 @@ module Rubydora
     # @param [Hash] options to convert to URL parameters
     # @return [String] URI
     def object_relationship_url pid, options = nil
-      url_for(object_url(pid) + "/relationships", options)
+      # XXX A bug (related to FCREPO-1102) in Fedora Commons prevents it from
+      # accepting encoded colons. This only occurs on relationships (bug 1102
+      # fixed it in the other modules). For the time being, we fix it by simply
+      # unescaping only colons (%3a).
+      url_for(object_url(pid).gsub(/%3[Aa]/, ":") + "/relationships", options)
     end
 
     # @param [String] pid
     # @param [Hash] options to convert to URL parameters
     # @return [String] URI
     def new_object_relationship_url pid, options = nil
-      url_for(object_relationship_url(pid) + "/new", options)
+      # XXX A bug (related to FCREPO-1102) in Fedora Commons prevents it from
+      # accepting encoded colons. This only occurs on relationships (bug 1102
+      # fixed it in the other modules). For the time being, we fix it by simply
+      # unescaping only colons (%3a).
+      url_for(object_relationship_url(pid).gsub(/%3[Aa]/, ":") + "/new", options)
     end
   end
 end
