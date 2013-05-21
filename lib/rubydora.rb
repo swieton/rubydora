@@ -14,7 +14,7 @@ module Rubydora
   autoload :Callbacks, "rubydora/callbacks"
   autoload :ArrayWithCallback, "rubydora/array_with_callback"
   autoload :Transactions, "rubydora/transactions"
-
+  autoload :AuditTrail, "rubydora/audit_trail"
 
   require 'csv'
   require 'time'
@@ -54,10 +54,10 @@ module Rubydora
     {:validateChecksum=>false}
   end
 
-  class RubydoraError < StandardError
-  end
+  class RubydoraError < StandardError; end
 
-  class FedoraInvalidRequest < RubydoraError
-  end
+  class FedoraInvalidRequest < RubydoraError; end
+
+  class RecordNotFound < RubydoraError; end 
 
 end

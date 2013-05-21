@@ -9,7 +9,7 @@ Gem::Specification.new do |s|
   s.email = ["chris@cbeer.info"]
   s.summary = %q{Fedora Commons REST API ruby library }
   s.description = %q{Fedora Commons REST API ruby library}
-  s.homepage = "http://github.com/cbeer/rubydora"
+  s.homepage = "http://github.com/projecthydra/rubydora"
 
   s.files         = `git ls-files`.split("\n")
   s.test_files    = `git ls-files -- {test,spec,features}/*`.split("\n")
@@ -32,4 +32,5 @@ Gem::Specification.new do |s|
   s.add_development_dependency("rspec")
   s.add_development_dependency("yard")
   s.add_development_dependency("jettywrapper")
+  s.add_development_dependency("webmock")
 end

@@ -9,7 +9,9 @@ module Rubydora
     
     include Rubydora::FedoraUrlHelpers
     extend ActiveSupport::Concern
-    include ActiveSupport::Benchmarkable
+    include ActiveSupport::Benchmarkable    
+    extend Deprecation
+
 
 
     VALID_CLIENT_OPTIONS = [:user, :password, :timeout, :open_timeout, :ssl_client_cert, :ssl_client_key]
@@ -59,6 +61,14 @@ module Rubydora
       end
     end
 
+    def describe options = {}
+      query_options = options.dup
+      query_options[:xml] ||= 'true'
+      client[describe_repository_url(query_options)].get
+    rescue Exception => exception
+      rescue_with_handler(exception) || raise
+    end
+
     # {include:RestApiClient::API_DOCUMENTATION}
     # @param [Hash] options
     # @return [String]
@@ -106,9 +116,25 @@ module Rubydora
     # @return [String]
     def ingest options = {}
       query_options = options.dup
-      pid = query_options.delete(:pid) || 'new'
+      pid = query_options.delete(:pid)
+
+      if pid.nil?
+        return mint_pid_and_ingest options
+      end
+
       file = query_options.delete(:file)
       assigned_pid = client[object_url(pid, query_options)].post((file.dup if file), :content_type => 'text/xml')
+      run_hook :after_ingest, :pid => assigned_pid, :file => file, :options => options
+      assigned_pid
+    rescue Exception => exception
+        rescue_with_handler(exception) || raise
+    end
+
+    def mint_pid_and_ingest options = {}
+      query_options = options.dup
+      file = query_options.delete(:file)
+
+      assigned_pid = client[new_object_url(query_options)].post((file.dup if file), :content_type => 'text/xml')
       run_hook :after_ingest, :pid => assigned_pid, :file => file, :options => options
       assigned_pid
     rescue Exception => exception
@@ -122,6 +148,7 @@ module Rubydora
     def export options = {}
       query_options = options.dup
       pid = query_options.delete(:pid)
+      raise ArgumentError, "Must have a pid" unless pid
       client[export_object_url(pid, query_options)].get
     rescue Exception => exception
         rescue_with_handler(exception) || raise
@@ -192,10 +219,16 @@ module Rubydora
       query_options = options.dup
       pid = query_options.delete(:pid)
       dsid = query_options.delete(:dsid)
+      raise ArgumentError, "Missing required parameter :pid" unless pid
+
+      if dsid.nil?
+        #raise ArgumentError, "Missing required parameter :dsid" unless dsid
+        Deprecation.warn(RestApiClient, "Calling Rubydora::RestApiClient#datastream without a :dsid is deprecated, use #datastreams instead")
+        return datastreams(options)
+      end
       query_options[:format] ||= 'xml'
       val = nil
-      message = dsid.nil? ? "Loaded datastream list for #{pid}" : "Loaded datastream profile #{pid}/#{dsid}"
-      benchmark message, :level=>:debug do
+      benchmark "Loaded datastream profile #{pid}/#{dsid}", :level=>:debug do
         val = client[datastream_url(pid, dsid, query_options)].get
       end
 
@@ -207,7 +240,29 @@ module Rubydora
         rescue_with_handler(exception) || raise
     end
 
-    alias_method :datastreams, :datastream
+    def datastreams options = {}
+      unless options[:dsid].nil?
+        #raise ArgumentError, "Missing required parameter :dsid" unless dsid
+        Deprecation.warn(RestApiClient, "Calling Rubydora::RestApiClient#datastreams with a :dsid is deprecated, use #datastream instead")
+        return datastream(options)
+      end
+      query_options = options.dup
+      pid = query_options.delete(:pid)
+      raise ArgumentError, "Missing required parameter :pid" unless pid
+      query_options[:format] ||= 'xml'
+      val = nil
+      benchmark "Loaded datastream list for #{pid}", :level=>:debug do
+        val = client[datastreams_url(pid, query_options)].get
+      end
+
+      val
+    rescue RestClient::Unauthorized => e
+      logger.error "Unauthorized at #{client.url}/#{datastreams_url(pid, query_options)}"
+      raise e
+    rescue Exception => exception
+        rescue_with_handler(exception) || raise
+
+    end
 
     # {include:RestApiClient::API_DOCUMENTATION}
     # @param [Hash] options
@@ -281,7 +336,9 @@ module Rubydora
       pid = query_options.delete(:pid)
       dsid = query_options.delete(:dsid)
       file = query_options.delete(:content)
-      content_type = query_options.delete(:content_type) || query_options[:mimeType] || (MIME::Types.type_for(file.path).first if file.respond_to? :path) || 'application/octet-stream'
+      # In ruby 1.8.7 StringIO (file) responds_to? :path, but it always returns nil,  In ruby 1.9.3 StringIO doesn't have path.
+      # When we discontinue ruby 1.8.7 support we can remove the `|| ''` part.
+      content_type = query_options.delete(:content_type) || query_options[:mimeType] || (MIME::Types.type_for(file.path || '').first if file.respond_to? :path) || 'application/octet-stream'
       run_hook :before_add_datastream, :pid => pid, :dsid => dsid, :file => file, :options => options
       str = file.respond_to?(:read) ? file.read : file
       file.rewind if file.respond_to?(:rewind)
@@ -300,7 +357,9 @@ module Rubydora
       pid = query_options.delete(:pid)
       dsid = query_options.delete(:dsid)
       file = query_options.delete(:content)
-      content_type = query_options.delete(:content_type) || query_options[:mimeType] || (MIME::Types.type_for(file.path).first if file.respond_to? :path) || 'application/octet-stream'
+      # In ruby 1.8.7 StringIO (file) responds_to? :path, but it always returns nil,  In ruby 1.9.3 StringIO doesn't have path.
+      # When we discontinue ruby 1.8.7 support we can remove the `|| ''` part.
+      content_type = query_options.delete(:content_type) || query_options[:mimeType] || (MIME::Types.type_for(file.path || '').first if file.respond_to? :path) || 'application/octet-stream'
 
       rest_client_options = {}
       if file

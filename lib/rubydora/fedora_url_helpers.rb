@@ -12,12 +12,20 @@ module Rubydora
       "#{base}" + (("?#{options.map { |key, value|  "#{CGI::escape(key.to_s)}=#{CGI::escape(value.to_s)}"}.join("&")  }" if options and not options.empty?) || '')
     end
 
+    def describe_repository_url options = nil
+      url_for("describe", options)
+    end
+
     # Generate a base object REST API endpoint URI
     # @param [String] pid
     # @param [Hash] options to convert to URL parameters
     # @return [String] URI
     def object_url pid, options = nil
       url_for("objects" + (("/#{CGI::escape(pid.to_s.gsub('info:fedora/', ''))}" if pid) || ''), options)
+    end
+
+    def new_object_url options = nil
+      object_url "new", options
     end
 
     # @param [Hash] options to convert to URL parameters
@@ -48,9 +56,20 @@ module Rubydora
     # @param [String] dsid
     # @param [Hash] options to convert to URL parameters
     # @return [String] URI
-    def datastream_url pid, dsid = nil, options = nil
+    def datastream_url pid, dsid, options = nil
+      raise "" unless pid and dsid
+      url_for(object_url(pid) + "/datastreams/#{CGI::escape(dsid)}", options)
+    end
+
+
+    # Generate a base datastream REST API endpoint URI
+    # @param [String] pid
+    # @param [String] dsid
+    # @param [Hash] options to convert to URL parameters
+    # @return [String] URI
+    def datastreams_url pid, options = nil
       raise "" unless pid
-      url_for(object_url(pid) + "/datastreams" + (("/#{CGI::escape(dsid)}" if dsid) || ''), options)
+      url_for(object_url(pid) + "/datastreams", options)
     end
 
     # @param [String] pid

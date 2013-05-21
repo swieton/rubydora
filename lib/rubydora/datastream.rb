@@ -181,7 +181,11 @@ module Rubydora
       return true if new? and !local_or_remote_content(false).blank? # new datastreams must have content
 
       if controlGroup == "X"
-        return !EquivalentXml.equivalent?(Nokogiri::XML(content), Nokogiri::XML(datastream_content))
+        if self.eager_load_datastream_content
+          return !EquivalentXml.equivalent?(Nokogiri::XML(content), Nokogiri::XML(datastream_content))
+        else
+          return !EquivalentXml.equivalent?(Nokogiri::XML(content), Nokogiri::XML(@datastream_content))
+        end
       else
         if self.eager_load_datastream_content
           return local_or_remote_content(false) != datastream_content
@@ -208,6 +212,41 @@ module Rubydora
       # return true if instance_variable_defined? :@content
 
       behaves_like_io?(@content) || !content.blank?
+    end
+
+    # Returns a streaming response of the datastream.  This is ideal for large datasteams because
+    # it doesn't require holding the entire content in memory. If you specify the from and length
+    # parameters it simulates a range request. Unfortunatly Fedora 3 doesn't have range requests,
+    # so this method needs to download the whole thing and just seek to the part you care about.
+    # 
+    # @param [Integer] from (bytes) the starting point you want to return. 
+    # 
+    def stream (from = 0, length = nil)
+      raise "Can't determine dsSize" unless dsSize
+      length = dsSize - from unless length
+      counter = 0
+      Enumerator.new do |blk|
+        repository.datastream_dissemination(:pid => pid, :dsid => dsid) do |response|
+          response.read_body do |chunk|
+            last_counter = counter
+            counter += chunk.size
+            if (counter > from) # greater than the range minimum
+              if counter > from + length
+                # At the end of what we need. Write the beginning of what was read.
+                offset = (length + from) - counter - 1
+                blk << chunk[0..offset]
+              elsif from >= last_counter
+                # At the end of what we beginning of what we need. Write the end of what was read.
+                offset = from - last_counter
+                blk << chunk[offset..-1]
+              else 
+                # In the middle. We need all of this
+                blk << chunk
+              end
+            end
+          end
+        end
+      end
     end
 
     # Retrieve the datastream profile as a hash (and cache it)
@@ -279,6 +318,12 @@ module Rubydora
       end
     end
 
+    def current_version?
+      return true if new?
+      vers = versions
+      return vers.empty? || dsVersionID == vers.first.dsVersionID
+    end
+
     # Add datastream to Fedora
     # @return [Rubydora::Datastream]
     def create
@@ -318,6 +363,28 @@ module Rubydora
     def datastream_will_change!
       attribute_will_change! :profile
     end
+
+    # @return [boolean] is this an external datastream?
+    def external?
+      controlGroup == 'E'
+    end
+
+    # @return [boolean] is this a redirect datastream?
+    def redirect?
+      controlGroup == 'R'
+    end
+
+    # @return [boolean] is this a managed datastream?
+    def managed?
+      controlGroup == 'M'
+    end
+
+    # @return [boolean] is this an inline datastream?
+    def inline?
+      controlGroup == 'X'
+    end
+
+    
 
     protected
     # datastream parameters 
@@ -369,27 +436,6 @@ module Rubydora
       URI.parse(val) unless val.nil?
     end
 
-    # @return [boolean] is this an external datastream?
-    def external?
-      controlGroup == 'E'
-    end
-
-    # @return [boolean] is this a redirect datastream?
-    def redirect?
-      controlGroup == 'R'
-    end
-
-    # @return [boolean] is this a managed datastream?
-    def managed?
-      controlGroup == 'M'
-    end
-
-    # @return [boolean] is this an inline datastream?
-    def inline?
-      controlGroup == 'X'
-    end
-
-    
     private
 
     # Rack::Test::UploadedFile is often set via content=, however it's not an IO, though it wraps an io object.

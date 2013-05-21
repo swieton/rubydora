@@ -1,5 +1,6 @@
 require 'rubygems'
 require 'bundler'
+require 'jettywrapper'
 require 'bundler/gem_tasks'
 
 begin
@@ -14,8 +15,8 @@ end
 
 require 'rspec/core/rake_task'
 
-desc 'Default: run specs.'
-task :default => :spec
+desc 'Default: run ci build.'
+task :default => :ci
 
 desc "Run specs"
 RSpec::Core::RakeTask.new do |t|
@@ -37,19 +38,18 @@ task :console do
 end
 
 desc "Execute Continuous Integration build"
-task :ci do
+task :ci => 'jetty:clean' do
   unless ENV['environment'] == 'test'
     exec("rake ci environment=test") 
   end
 
-  require 'jettywrapper'
   jetty_params = {
     :jetty_home => File.expand_path(File.dirname(__FILE__) + '/jetty'),
     :quiet => false,
     :jetty_port => ENV['TEST_JETTY_PORT'] || 8983,
     :solr_home => File.expand_path(File.dirname(__FILE__) + '/jetty/solr'),
     :fedora_home => File.expand_path(File.dirname(__FILE__) + '/jetty/fedora/default'),
-    :startup_wait => 30,
+    :startup_wait => 60,
     :java_opts => ['-Xmx256m', '-XX:MaxPermSize=128m']
   }
 

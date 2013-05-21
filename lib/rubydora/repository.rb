@@ -24,11 +24,15 @@ module Rubydora
       DigitalObject.find(pid, self)
     end
 
+    def find_or_initialize pid
+      DigitalObject.find_or_initialize(pid, self)
+    end
+
     # High-level access to the Fedora find_objects API
     #
     # @params [String] query
     # @params [Hash] options
-    # @yield [DigitalObject] Yield a DigitalObject for each search result
+    # @yield [DigitalObject] Yield a DigitalObject for each search result, skipping forbidden objects
     def search query, options = {}, &block
       return to_enum(:search, query, options).to_a unless block_given?
       
@@ -42,7 +46,14 @@ module Rubydora
         response = self.find_objects(options.merge(:query => query, :resultFormat => 'xml', :pid => true).merge(sessionOptions))
 
         doc = Nokogiri::XML(response)
-        doc.xpath('//xmlns:objectFields/xmlns:pid', doc.namespaces).each { |pid| obj = self.find(pid.text); block.call(obj) }
+        doc.xpath('//xmlns:objectFields/xmlns:pid', doc.namespaces).each do |pid|
+          begin
+            obj = self.find(pid.text);
+          rescue RestClient::Unauthorized
+            next
+          end
+          block.call(obj)
+        end
 
         sessionToken = doc.xpath('//xmlns:listSession/xmlns:token', doc.namespaces).text
       end until sessionToken.nil? or sessionToken.empty? or doc.xpath('//xmlns:resultList/xmlns:objectFields', doc.namespaces).empty?
@@ -58,7 +69,7 @@ module Rubydora
     # @return [Hash]
     def profile
       @profile ||= begin
-        profile_xml = client['describe?xml=true'].get
+        profile_xml = self.describe.strip
         profile_xml.gsub! '<fedoraRepository', '<fedoraRepository xmlns="http://www.fedora.info/definitions/1/0/access/"' unless profile_xml =~ /xmlns=/
         doc = Nokogiri::XML(profile_xml)
         xmlns = { 'access' => "http://www.fedora.info/definitions/1/0/access/"  }

@@ -8,6 +8,52 @@ describe Rubydora::Datastream do
     @mock_object.stub(:repository => @mock_repository, :pid => 'pid', :new? => false)
   end
 
+  describe "stream" do
+    subject { Rubydora::Datastream.new @mock_object, 'dsid' }
+    before do
+      stub_response = stub()
+      stub_response.stub(:read_body).and_yield("one1").and_yield('two2').and_yield('thre').and_yield('four')
+      @mock_repository.should_receive(:datastream_dissemination).with(hash_including(:pid => 'pid', :dsid => 'dsid')).and_yield(stub_response) 
+      prof = <<-XML
+        <datastreamProfile>
+          <dsSize>16</dsSize>
+        </datastreamProfile>
+      XML
+      subject.profile = prof
+    end
+    it "should send the whold thing" do
+      e = subject.stream()
+      result = ''
+      e.each do |blk|
+        result << blk
+      end
+      result.should == 'one1two2threfour'
+    end
+    it "should send the whole thing when the range is open ended" do
+      e = subject.stream(0)
+      result = ''
+      e.each do |blk|
+        result << blk
+      end
+      result.should == 'one1two2threfour'
+    end
+    it "should get a range not starting at the beginning" do
+      e = subject.stream(3, 13)
+      result = ''
+      e.each do |blk|
+        result << blk
+      end
+      result.should == '1two2threfour'
+    end
+    it "should get a range not ending at the end" do
+      e = subject.stream(4, 8)
+      result = ''
+      e.each do |blk|
+        result << blk
+      end
+      result.should == 'two2thre'
+    end
+  end
 
   describe "create" do
     before(:each) do
@@ -75,6 +121,10 @@ describe Rubydora::Datastream do
     it "should allow versionable to be set to false" do
       @datastream.versionable = false
       @datastream.versionable.should be_false
+    end
+
+    it "should be the current version" do
+      @datastream.current_version?.should be_true
     end
 
     # it "should cast versionable to boolean" do
@@ -208,49 +258,75 @@ describe Rubydora::Datastream do
   end
 
   describe "content changed behavior" do
-    before(:each) do
-      @datastream = Rubydora::Datastream.new @mock_object, 'dsid'
-      @mock_repository.should_receive(:datastream).any_number_of_times.and_return <<-XML
-        <datastreamProfile>
-          <dsLocation>some:uri</dsLocation>
-          <dsLabel>label</dsLabel>
-        </datastreamProfile>
-      XML
+    describe "for a managed datastream" do
+      before(:each) do
+        @datastream = Rubydora::Datastream.new @mock_object, 'dsid'
+        @mock_repository.should_receive(:datastream).any_number_of_times.and_return <<-XML
+          <datastreamProfile>
+            <dsLocation>some:uri</dsLocation>
+            <dsLabel>label</dsLabel>
+          </datastreamProfile>
+        XML
+      end
+
+      it "should not be changed after a read-only access" do
+        @mock_repository.stub(:datastream_dissemination).with(hash_including(:pid => 'pid', :dsid => 'dsid')).and_return('asdf') 
+        @datastream.content
+        @datastream.content_changed?.should == false
+      end
+      it "should not load content just to check and see if it was changed." do
+        @mock_repository.should_not_receive(:datastream_dissemination).with(hash_including(:pid => 'pid', :dsid => 'dsid'))
+        @datastream.content_changed?.should == false
+      end
+      it "should be changed when the new content is different than the old content" do
+        @mock_repository.stub(:datastream_dissemination).with(hash_including(:pid => 'pid', :dsid => 'dsid')).and_return('asdf') 
+        @datastream.content = "test"
+        @datastream.content_changed?.should == true 
+      end
+
+      it "should not be changed when the new content is the same as the existing content (when eager-loading is enabled)" do
+        @mock_repository.stub(:datastream_dissemination).with(hash_including(:pid => 'pid', :dsid => 'dsid')).and_return('test') 
+        @datastream.eager_load_datastream_content = true
+        @datastream.content = "test"
+        @datastream.content_changed?.should  == false 
+      end
+
+      it "should  be changed when the new content is the same as the existing content (without eager loading, the default)" do
+        @mock_repository.stub(:datastream_dissemination).with(hash_including(:pid => 'pid', :dsid => 'dsid')).and_return('test') 
+        @datastream.content = "test"
+        @datastream.content_changed?.should  == true
+      end
+
+      it "should not be changed when the new content is the same as the existing content (and we have accessed #content previously)" do
+        @mock_repository.stub(:datastream_dissemination).with(hash_including(:pid => 'pid', :dsid => 'dsid')).and_return('test') 
+        @datastream.content
+        @datastream.content = "test"
+        @datastream.content_changed?.should  == false 
+      end
     end
 
-    it "should not be changed after a read-only access" do
-      @mock_repository.stub(:datastream_dissemination).with(hash_including(:pid => 'pid', :dsid => 'dsid')).and_return('asdf') 
-      @datastream.content
-      @datastream.content_changed?.should == false
-    end
-    it "should not load content just to check and see if it was changed." do
-      @mock_repository.should_not_receive(:datastream_dissemination).with(hash_including(:pid => 'pid', :dsid => 'dsid'))
-      @datastream.content_changed?.should == false
-    end
-    it "should be changed when the new content is different than the old content" do
-      @mock_repository.stub(:datastream_dissemination).with(hash_including(:pid => 'pid', :dsid => 'dsid')).and_return('asdf') 
-      @datastream.content = "test"
-      @datastream.content_changed?.should == true 
-    end
+    describe "for an inline datastream" do
+      before(:each) do
+        @mock_repository.should_receive(:datastream).any_number_of_times.and_return <<-XML
+          <datastreamProfile>
+            <dsLocation>some:uri</dsLocation>
+            <dsLabel>label</dsLabel>
+          </datastreamProfile>
+        XML
+        @datastream = Rubydora::Datastream.new @mock_object, 'dsid', :controlGroup => 'X'
+      end
+      it "should not be changed when the new content is the same as the existing content (when eager-loading is enabled)" do
+        @mock_repository.stub(:datastream_dissemination).with(hash_including(:pid => 'pid', :dsid => 'dsid')).and_return('<xml>test</xml>') 
+        @datastream.eager_load_datastream_content = true
+        @datastream.content = "<xml>test</xml>"
+        @datastream.content_changed?.should  == false 
+      end
 
-    it "should not be changed when the new content is the same as the existing content (when eager-loading is enabled)" do
-      @mock_repository.stub(:datastream_dissemination).with(hash_including(:pid => 'pid', :dsid => 'dsid')).and_return('test') 
-      @datastream.eager_load_datastream_content = true
-      @datastream.content = "test"
-      @datastream.content_changed?.should  == false 
-    end
-
-    it "should  be changed when the new content is the same as the existing content (without eager loading, the default)" do
-      @mock_repository.stub(:datastream_dissemination).with(hash_including(:pid => 'pid', :dsid => 'dsid')).and_return('test') 
-      @datastream.content = "test"
-      @datastream.content_changed?.should  == true
-    end
-
-    it "should not be changed when the new content is the same as the existing content (and we have accessed #content previously)" do
-      @mock_repository.stub(:datastream_dissemination).with(hash_including(:pid => 'pid', :dsid => 'dsid')).and_return('test') 
-      @datastream.content
-      @datastream.content = "test"
-      @datastream.content_changed?.should  == false 
+      it "should  be changed when the new content is the same as the existing content (without eager loading, the default)" do
+        @mock_repository.stub(:datastream_dissemination).with(hash_including(:pid => 'pid', :dsid => 'dsid')).and_return('<xml>test</xml>') 
+        @datastream.content = "<xml>test</xml>"
+        @datastream.content_changed?.should  == true
+      end
     end
   end
 
@@ -394,6 +470,36 @@ describe Rubydora::Datastream do
         Rubydora::Datastream.any_instance.stub(:new? => false)
         @datastream.versions.last.content
       end
+
+      it "should be the current version" do
+        @mock_repository.stub(:datastream).with(hash_including(:pid => 'pid', :dsid => 'dsid')).and_return <<-XML
+          <datastreamProfile>
+            <dsVersionID>dsid.1</dsVersionID>
+            <dsCreateDate>2010-01-02T00:00:00.012Z</dsCreateDate>
+          </datastreamProfile>
+          XML
+        @datastream.current_version?.should be_true
+      end
+
+      it "should be the current version if it's the first version" do
+        @mock_repository.stub(:datastream).with(hash_including(:pid => 'pid', :dsid => 'dsid', :asOfDateTime =>'2010-01-02T00:00:00.012Z')).and_return <<-XML
+          <datastreamProfile>
+            <dsVersionID>dsid.1</dsVersionID>
+            <dsCreateDate>2010-01-02T00:00:00.012Z</dsCreateDate>
+          </datastreamProfile>
+          XML
+        @datastream.versions.first.current_version?.should be_true
+      end
+
+      it "should not be the current version if it's the second version" do
+        @mock_repository.stub(:datastream).with(hash_including(:pid => 'pid', :dsid => 'dsid', :asOfDateTime => '2008-08-05T01:30:05.012Z')).and_return <<-XML
+          <datastreamProfile>
+            <dsVersionID>dsid.0</dsVersionID>
+            <dsCreateDate>2008-08-05T01:30:05.012Z</dsCreateDate>
+          </datastreamProfile>
+          XML
+        @datastream.versions[1].current_version?.should be_false
+      end
     end
     describe "when no versions are found" do
       before(:each) do
@@ -403,6 +509,11 @@ describe Rubydora::Datastream do
 
       it "should have an emptylist of previous versions" do
         @datastream.versions.should be_empty
+      end
+
+      it "should be the current version" do
+        @datastream.stub(:new? => false)
+        @datastream.current_version?.should be_true
       end
 
     end

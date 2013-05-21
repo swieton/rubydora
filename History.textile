@@ -1,3 +1,27 @@
+h3. 1.6.3 (2 May 2013)
+* Don't require backports gem
+
+h3. 1.6.2 (29 April 2013)
+* Handle 401 (no access) from Fedora in a graceful manner
+* Expose methods relating to control group (e.g. external?, redirect?, managed?, inline?)
+* validate that a pid is passed as one of the arguments to RestApiClient#export
+
+h3. 1.6.1
+* Removed break which caused Enumerator to never terminate
+
+h3. 1.6.0
+* Added support for accessing the audit log
+
+h3. 1.5.1
+* Fixed backwards incompatibility. Readded Deprecation to Rubydora::DigitalObject so 5.x versions of AF can do 'Deprecation.silence(Rubydora::DigitalObject)'
+
+h3. 1.5.0
+* Support for streaming range requests
+* Removed deprecated functionality for calling find on a non-existant datastream.
+
+h3. 1.4.0
+* Don't load datastreams more than necessary
+
 h3. 1.2.1
 * Support for Rack::Test::UploadedFile
 * Allow reading content that is a kind of IO after save
